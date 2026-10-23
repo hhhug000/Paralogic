@@ -222,3 +222,7 @@ __marimo__/
 # Go workspace file
 go.work
 go.work.sum
+
+# Frontend dependencies and build output
+web/node_modules/
+web/dist/

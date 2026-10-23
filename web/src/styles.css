@@ -1,0 +1,178 @@
+:root {
+  color: #2d2d2d;
+  background: #f3f3f3;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+button { cursor: pointer; }
+
+.app { height: 100vh; display: flex; flex-direction: column; }
+header {
+  align-items: center;
+  background: #fafafa;
+  border-bottom: 1px solid #d2d2d2;
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 18px;
+}
+header strong { font-size: 1.2rem; }
+header button {
+  background: #d8d8d8;
+  border: 0;
+  border-radius: 5px;
+  color: #2d2d2d;
+  padding: 8px 14px;
+}
+.workspace {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 230px 1fr;
+  min-height: 0;
+}
+
+.tree {
+  background: #f8f8f8;
+  padding: 14px;
+  overflow: auto;
+}
+
+.tree { border-right: 1px solid #d2d2d2; }
+h2 { font-size: .85rem; letter-spacing: .08em; margin: 0 0 12px; text-transform: uppercase; }
+.tree button {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: #444;
+  display: flex;
+  justify-content: space-between;
+  padding: 9px;
+  text-align: left;
+  width: 100%;
+}
+.tree button:hover, .tree button.selected { background: #e4e4e4; }
+small { color: #777; }
+
+.viewport {
+  cursor: grab;
+  min-height: 0;
+  position: relative;
+}
+
+.viewport:active { cursor: grabbing; }
+.viewport canvas { display: block; height: 100%; width: 100%; }
+.origin-marker {
+  background: #555;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  height: 9px;
+  pointer-events: none;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 9px;
+  z-index: 1;
+}
+.viewport canvas.gizmo-canvas {
+  height: 150px;
+  pointer-events: auto;
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 150px;
+  z-index: 1;
+}
+.viewport .view-cube {
+  height: 80px;
+  pointer-events: auto;
+  position: absolute;
+  right: 24px;
+  top: 24px;
+  width: 80px;
+  z-index: 3;
+}
+.viewport .view-cube .side {
+  background-color: #d8d8d8;
+  border-color: #b2b2b2;
+}
+.viewport .view-cube .side:hover {
+  background-color: #f0b36a;
+}
+.orientation-widget {
+  height: 24px;
+  position: absolute;
+  right: 24px;
+  top: 112px;
+  width: 80px;
+  z-index: 4;
+  pointer-events: none;
+}
+.orientation-arrow {
+  background: transparent;
+  border: 0;
+  color: #444;
+  filter: drop-shadow(0 1px 2px #aaa);
+  height: 30px;
+  line-height: 1;
+  padding: 0;
+  position: absolute;
+  width: 30px;
+  pointer-events: auto;
+}
+.orientation-arrow:hover {
+  color: #222;
+  transform: scale(1.2);
+}
+.arrow-up { left: 60px; top: 0; }
+.arrow-left { left: 4px; top: 60px; }
+.arrow-right { right: 4px; top: 60px; }
+.arrow-down { bottom: 0; left: 60px; }
+.orientation-menu-button {
+  background: transparent;
+  border: 0;
+  color: #444;
+  filter: drop-shadow(0 1px 2px #aaa);
+  font-size: 18px;
+  height: 24px;
+  line-height: 1;
+  min-width: 24px;
+  pointer-events: auto;
+}
+.orientation-menu-button:hover {
+  color: #222;
+}
+.orientation-menu-button {
+  bottom: 0;
+  font-size: 20px;
+  position: absolute;
+  right: 0;
+}
+.orientation-menu-button span { font-size: 11px; }
+.view-menu {
+  background: #fafafa;
+  border: 1px solid #bdbdbd;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  position: absolute;
+  right: 0;
+  top: 40px;
+  width: 112px;
+}
+.view-menu button {
+  background: transparent;
+  border: 0;
+  color: #444;
+  padding: 7px 8px;
+  text-align: left;
+  pointer-events: auto;
+}
+.view-menu button:hover { background: #e4e4e4; }
+.inspector pre, .error {
+  color: #555;
+  font: 12px/1.45 ui-monospace, monospace;
+  white-space: pre-wrap;
+}
+.error { color: #8a3333; }
+.hint { color: #666; font-size: 12px; line-height: 1.4; }
