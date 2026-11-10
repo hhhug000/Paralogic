@@ -196,14 +196,11 @@ without a model.
 
 ### Navigation
 
-- Rotation is about the point under the cursor (shown while rotating), with no
-  stop at the poles. Turntable keeps CAD Z vertical; trackball rotates freely.
-- Panning keeps the grabbed point under the cursor; the wheel zooms towards the
-  cursor.
-- Mouse presets (view menu): Paralogic (left rotate, right or middle pan, Shift+left
-  pan, Ctrl+left zoom), SolidWorks (middle rotate, Ctrl+middle pan,
-  Shift+middle zoom), Onshape (right rotate, middle pan) and Fusion
-  (Shift+middle rotate, middle pan). Left click always selects.
+- The mouse layout follows Fusion: middle drag pans, Shift + middle drag orbits
+  about the point under the cursor (shown while orbiting), and the wheel zooms
+  towards the cursor. Panning keeps the grabbed point under the cursor.
+- Rotation has no stop at the poles. Turntable keeps CAD Z vertical; trackball
+  rotates freely (view menu).
 - Perspective and orthographic projection keep the same framing when switched.
 
 The view cube (top right) has bevelled faces, edges and corners: click one to
@@ -241,7 +238,12 @@ cut surface is shown in colour. The reference planes are not cut.
 
 Click faces, edges, vertices, straight-edge midpoints, the origin and the
 Top, Front and Right datum planes to toggle them in the selection; clicking
-empty space clears it. Model vertices and edges win over the origin, which wins
+empty space clears it. A left drag selects with a box, as in Fusion:
+dragging left to right is a window selection (solid box; items entirely
+inside), right to left a crossing selection (dashed box; anything the box
+touches). Only visible faces, edges, vertices and the origin are picked (datum
+planes only by a window around the whole plane), and they are added to the
+selection; hold Ctrl while dragging to remove them instead. Model vertices and edges win over the origin, which wins
 over model faces, which win over datum planes. Normal to (`N`) also works on a
 datum plane. Hovering shows the item's type and
 size (for example `Edge 10 · Circle · R 3.00 · L 18.85`). The sidebar measures

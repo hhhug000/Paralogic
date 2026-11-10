@@ -226,6 +226,20 @@ kbd {
   z-index: 3;
 }
 
+/* Box selection: solid for window (left to right), dashed for crossing */
+.selection-box {
+  background: rgba(47, 126, 216, 0.12);
+  border: 1px solid #4a95e8;
+  display: none;
+  pointer-events: none;
+  position: absolute;
+  z-index: 4;
+}
+.selection-box.crossing {
+  background: rgba(92, 191, 98, 0.12);
+  border: 1px dashed #6cc772;
+}
+
 /* View cube gizmo: the cube with orbit and roll arrows, and the view menu */
 .gizmo {
   height: 196px;

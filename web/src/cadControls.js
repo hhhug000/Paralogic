@@ -1,53 +1,18 @@
 import * as THREE from "three";
 
 // Mouse button numbers as reported by PointerEvent.button.
-const LEFT = 0;
 const MIDDLE = 1;
-const RIGHT = 2;
 
-// Each preset maps a button plus modifier to a camera action. Unbound left
-// clicks are left for selection.
-export const MOUSE_PRESETS = {
-  paralogic: {
-    label: "Paralogic (left rotate, right pan)",
-    bindings: [
-      { button: LEFT, modifier: "none", action: "rotate" },
-      { button: RIGHT, modifier: "none", action: "pan" },
-      { button: MIDDLE, modifier: "none", action: "pan" },
-      { button: LEFT, modifier: "shift", action: "pan" },
-      { button: LEFT, modifier: "ctrl", action: "zoom" },
-    ],
-  },
-  solidworks: {
-    label: "SolidWorks (middle rotate)",
-    bindings: [
-      { button: MIDDLE, modifier: "none", action: "rotate" },
-      { button: MIDDLE, modifier: "ctrl", action: "pan" },
-      { button: MIDDLE, modifier: "shift", action: "zoom" },
-    ],
-  },
-  onshape: {
-    label: "Onshape (right rotate, middle pan)",
-    bindings: [
-      { button: RIGHT, modifier: "none", action: "rotate" },
-      { button: MIDDLE, modifier: "none", action: "pan" },
-      { button: RIGHT, modifier: "ctrl", action: "pan" },
-      { button: MIDDLE, modifier: "shift", action: "zoom" },
-    ],
-  },
-  fusion: {
-    label: "Fusion (shift+middle rotate, middle pan)",
-    bindings: [
-      { button: MIDDLE, modifier: "shift", action: "rotate" },
-      { button: MIDDLE, modifier: "none", action: "pan" },
-      { button: RIGHT, modifier: "shift", action: "zoom" },
-    ],
-  },
-};
+// The mouse layout follows Fusion: middle drag pans, Shift + middle drag
+// orbits, and the wheel zooms. The left button is left free for selection,
+// including box selection.
+const BINDINGS = [
+  { button: MIDDLE, modifier: "none", action: "pan" },
+  { button: MIDDLE, modifier: "shift", action: "rotate" },
+];
 
 const ROTATE_SPEED = 0.008; // radians per pixel
 const ZOOM_SPEED = 0.0015; // per wheel delta pixel
-const DRAG_ZOOM_SPEED = 0.006; // per dragged pixel
 const ANIMATION_MS = 320;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
@@ -73,7 +38,7 @@ export class CadControls extends THREE.EventDispatcher {
     this.target = new THREE.Vector3();
     this.projection = "perspective";
     this.rotationMode = "turntable";
-    this.bindings = MOUSE_PRESETS.paralogic.bindings;
+    this.bindings = BINDINGS;
     this.enabled = true;
     this.minDistance = 0.5;
     this.maxDistance = 20000;
@@ -111,10 +76,6 @@ export class CadControls extends THREE.EventDispatcher {
     element.removeEventListener("wheel", this._onWheel);
     element.removeEventListener("contextmenu", this._onContextMenu);
     if (this.animation) cancelAnimationFrame(this.animation);
-  }
-
-  setMousePreset(name) {
-    this.bindings = (MOUSE_PRESETS[name] || MOUSE_PRESETS.paralogic).bindings;
   }
 
   setProjection(projection) {
@@ -207,7 +168,6 @@ export class CadControls extends THREE.EventDispatcher {
     }
     if (drag.action === "rotate") this._rotate(dx, dy, drag.anchor);
     else if (drag.action === "pan") this._pan(dx, dy, drag.anchor);
-    else if (drag.action === "zoom") this._zoomAbout(drag.anchor, Math.exp(dy * DRAG_ZOOM_SPEED));
     this.changed();
   }
 

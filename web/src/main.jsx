@@ -8,7 +8,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { MeshBVH, acceleratedRaycast } from "three-mesh-bvh";
 import helvetikerFont from "three/examples/fonts/helvetiker_regular.typeface.json";
-import { CadControls, MOUSE_PRESETS } from "./cadControls.js";
+import { CadControls } from "./cadControls.js";
 import {
   EDGE_LINE,
   createTopology,
@@ -174,6 +174,7 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
   const originMarker = useRef(null);
   const pivotMarker = useRef(null);
   const tooltip = useRef(null);
+  const selectionBox = useRef(null);
   const cubeMount = useRef(null);
   const dimensionLabel = useRef(null);
   const sceneRef = useRef(null);
@@ -193,11 +194,6 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
     "turntable",
     "trackball",
   ]);
-  const [mousePreset, setMousePreset] = usePersistentState(
-    "mouse",
-    "paralogic",
-    Object.keys(MOUSE_PRESETS),
-  );
   const [showPlanes, setShowPlanes] = usePersistentState("planes", "on", ["on", "off"]);
   const [section, setSection] = useState({ enabled: false, plane: "XZ", offset: 0, flip: false });
   const [sectionRange, setSectionRange] = useState({ XY: [-10, 10], XZ: [-10, 10], YZ: [-10, 10] });
@@ -825,6 +821,17 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
       pointerDown = { x: event.clientX, y: event.clientY };
       hideTooltip();
       setMenu(null);
+      if (event.button === 0) {
+        box = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          x: event.clientX,
+          y: event.clientY,
+          active: false,
+        };
+        renderer.domElement.setPointerCapture(event.pointerId);
+      }
     };
     const click = (event) => {
       if (
@@ -842,19 +849,228 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
     };
     // Adds the item to the selection, or removes it if already selected. Used
     // by viewport clicks and by the feature tree.
-    const toggle = (picked) => {
-      if (selected.has(picked.key)) {
-        const { overlay } = selected.get(picked.key);
-        selection.remove(overlay);
-        disposeObject(overlay);
-        selected.delete(picked.key);
-      } else {
-        const overlay = createOverlay(picked, true);
-        selection.add(overlay);
-        selected.set(picked.key, { picked, overlay });
-      }
+    const addItem = (picked) => {
+      if (selected.has(picked.key)) return;
+      const overlay = createOverlay(picked, true);
+      selection.add(overlay);
+      selected.set(picked.key, { picked, overlay });
       paintItem(picked);
+    };
+    const removeItem = (picked) => {
+      if (!selected.has(picked.key)) return;
+      const { overlay } = selected.get(picked.key);
+      selection.remove(overlay);
+      disposeObject(overlay);
+      selected.delete(picked.key);
+      paintItem(picked);
+    };
+    const toggle = (picked) => {
+      if (selected.has(picked.key)) removeItem(picked);
+      else addItem(picked);
       reportSelection();
+    };
+
+    // --- Box selection --------------------------------------------------------
+    // A left drag draws a box, as in Fusion: left to right is a window
+    // selection (items entirely inside), right to left a crossing selection
+    // (anything the box touches). Only visible items are picked. They are added
+    // to the selection, or removed from it when Ctrl is held.
+    let box = null;
+    const boxRaycaster = new THREE.Raycaster();
+    const boxPoint = new THREE.Vector3();
+    const boxProjected = new THREE.Vector3();
+    // Whether a CAD-space point can be seen: in front of the camera, not cut
+    // away by the section, and not hidden behind the model. `face` accepts a
+    // hit on that face as visible (for points sampled on the face itself).
+    const isVisible = (cadPoint, face) => {
+      boxPoint.copy(cadPoint).applyMatrix4(cadRoot.matrixWorld);
+      if (state.sectionPlane && state.sectionPlane.distanceToPoint(boxPoint) < 0) return false;
+      const camera = controls.object;
+      boxProjected.copy(boxPoint).project(camera);
+      if (boxProjected.z < -1 || boxProjected.z > 1) return false;
+      if (!state.model) return true;
+      let origin;
+      let direction;
+      let distance;
+      if (controls.projection === "orthographic") {
+        direction = camera.getWorldDirection(new THREE.Vector3());
+        origin = boxPoint.clone().addScaledVector(direction, -1e5);
+        distance = 1e5;
+      } else {
+        origin = camera.position;
+        direction = boxPoint.clone().sub(origin);
+        distance = direction.length();
+        direction.normalize();
+      }
+      boxRaycaster.set(origin, direction);
+      const hit = firstVisibleHit(boxRaycaster);
+      if (!hit) return true;
+      if (face !== undefined && state.topology.faceOfTriangle[hit.faceIndex] === face) return true;
+      const tolerance = Math.max(distance * 1e-3, (modelSphere()?.radius || 1) * 1e-4);
+      return hit.distance >= distance - tolerance;
+    };
+    // Up to `count` evenly spaced indexes in [start, end).
+    const samples = (start, end, count) => {
+      const length = end - start;
+      if (length <= count) return [...Array(length).keys()].map((i) => start + i);
+      return [...Array(count).keys()].map((i) => start + Math.floor(((i + 0.5) * length) / count));
+    };
+    const boxSelect = (rect, crossing, deselect) => {
+      const inBox = ([sx, sy]) =>
+        sx >= rect.minX && sx <= rect.maxX && sy >= rect.minY && sy <= rect.maxY;
+      // Whether segment ab enters the box (Liang–Barsky clipping).
+      const segmentHits = ([ax, ay], [bx, by]) => {
+        let t0 = 0;
+        let t1 = 1;
+        const dx = bx - ax;
+        const dy = by - ay;
+        for (const [p, q] of [
+          [-dx, ax - rect.minX],
+          [dx, rect.maxX - ax],
+          [-dy, ay - rect.minY],
+          [dy, rect.maxY - ay],
+        ]) {
+          if (p === 0) {
+            if (q < 0) return false;
+          } else {
+            const t = q / p;
+            if (p < 0) t0 = Math.max(t0, t);
+            else t1 = Math.min(t1, t);
+            if (t0 > t1) return false;
+          }
+        }
+        return true;
+      };
+      const passes = (screenPoints, closed = false) => {
+        if (!screenPoints.length) return false;
+        if (!crossing) return screenPoints.every(inBox);
+        if (screenPoints.some(inBox)) return true;
+        for (let i = 0; i + 1 < screenPoints.length; i += 1) {
+          if (segmentHits(screenPoints[i], screenPoints[i + 1])) return true;
+        }
+        return closed && segmentHits(screenPoints[screenPoints.length - 1], screenPoints[0]);
+      };
+      const found = [];
+      const point = new THREE.Vector3();
+
+      if (inBox(toScreen(point.set(0, 0, 0)))) found.push({ kind: "origin", id: 0, key: "origin:0" });
+      // Datum planes are large, so only a window around a whole plane picks it.
+      if (referencePlanes.visible && !crossing) {
+        const half = PLANE_SIZE / 2;
+        Object.entries(DATUM_PLANES).forEach(([name, { rotation }]) => {
+          const matrix = new THREE.Matrix4().makeRotationFromEuler(rotation);
+          const corners = [[-half, -half], [half, -half], [half, half], [-half, half]].map(([u, v]) =>
+            toScreen(new THREE.Vector3(u, v, 0).applyMatrix4(matrix)),
+          );
+          if (passes(corners)) found.push({ kind: "plane", id: name, key: `plane:${name}` });
+        });
+      }
+
+      const { topology } = state;
+      if (state.model && topology) {
+        for (let vertex = 0; vertex < topology.vertexCount; vertex += 1) {
+          const p = topology.vertexPoint(vertex, point);
+          if (inBox(toScreen(p)) && isVisible(p)) {
+            found.push({ kind: "vertex", id: vertex, key: `vertex:${vertex}` });
+          }
+        }
+        const edgePoints = (edge) =>
+          [...Array(topology.edgePointCount(edge)).keys()].map((i) =>
+            topology.edgePoint(edge, i, new THREE.Vector3()),
+          );
+        for (const edge of topology.visibleEdges) {
+          const points = edgePoints(edge);
+          if (!passes(points.map(toScreen))) continue;
+          // Visibility is sampled inside the edge, at segment midpoints, so a
+          // visible corner does not make the hidden edges meeting it count.
+          const visible = samples(0, points.length - 1, 5).some((i) =>
+            isVisible(points[i].clone().add(points[i + 1]).multiplyScalar(0.5)),
+          );
+          if (visible) {
+            found.push({ kind: "edge", id: edge, key: `edge:${edge}` });
+          }
+        }
+        // A face is inside the box when its boundary is. A crossing box also
+        // touches the face lying under its centre.
+        const center = castAt(
+          container.getBoundingClientRect().left + (rect.minX + rect.maxX) / 2,
+          container.getBoundingClientRect().top + (rect.minY + rect.maxY) / 2,
+        );
+        const centerFace = center ? topology.faceOfTriangle[center.faceIndex] : -1;
+        const geometry = state.model.geometry;
+        const positions = geometry.attributes.position;
+        const index = geometry.index;
+        const a = new THREE.Vector3();
+        const b = new THREE.Vector3();
+        const c = new THREE.Vector3();
+        for (let face = 0; face < topology.faceCount; face += 1) {
+          let outline = Array.from(topology.faceEdges(face)).flatMap(edgePoints);
+          if (!outline.length) {
+            const [start, end] = topology.faceVertexRange(face);
+            outline = samples(start, end, 200).map((v) => new THREE.Vector3().fromBufferAttribute(positions, v));
+          }
+          const touches = (crossing && face === centerFace) || passes(outline.map(toScreen));
+          if (!touches) continue;
+          const [first, last] = topology.faceTriangleRange(face);
+          const visible = samples(first, last, 32).some((t) => {
+            a.fromBufferAttribute(positions, index.getX(t * 3));
+            b.fromBufferAttribute(positions, index.getX(t * 3 + 1));
+            c.fromBufferAttribute(positions, index.getX(t * 3 + 2));
+            return isVisible(a.add(b).add(c).divideScalar(3), face);
+          });
+          if (visible) found.push({ kind: "face", id: face, key: `face:${face}` });
+        }
+      }
+      found.forEach(deselect ? removeItem : addItem);
+      if (found.length) reportSelection();
+    };
+    const showBox = () => {
+      const element = selectionBox.current;
+      if (!element) return;
+      const bounds = container.getBoundingClientRect();
+      const minX = Math.min(box.startX, box.x) - bounds.left;
+      const minY = Math.min(box.startY, box.y) - bounds.top;
+      element.style.display = "block";
+      element.style.left = `${minX}px`;
+      element.style.top = `${minY}px`;
+      element.style.width = `${Math.abs(box.x - box.startX)}px`;
+      element.style.height = `${Math.abs(box.y - box.startY)}px`;
+      element.classList.toggle("crossing", box.x < box.startX);
+    };
+    const hideBox = () => {
+      if (selectionBox.current) selectionBox.current.style.display = "none";
+    };
+    const boxMove = (event) => {
+      if (!box || event.pointerId !== box.pointerId) return;
+      box.x = event.clientX;
+      box.y = event.clientY;
+      if (!box.active && Math.hypot(box.x - box.startX, box.y - box.startY) > 4) {
+        box.active = true;
+        clearHover();
+      }
+      if (box.active) showBox();
+    };
+    const boxEnd = (event) => {
+      if (!box || event.pointerId !== box.pointerId) return;
+      const finished = box;
+      box = null;
+      hideBox();
+      if (!finished.active) return;
+      const bounds = container.getBoundingClientRect();
+      boxSelect(
+        {
+          minX: Math.min(finished.startX, finished.x) - bounds.left,
+          maxX: Math.max(finished.startX, finished.x) - bounds.left,
+          minY: Math.min(finished.startY, finished.y) - bounds.top,
+          maxY: Math.max(finished.startY, finished.y) - bounds.top,
+        },
+        finished.x < finished.startX,
+        event.ctrlKey || event.metaKey,
+      );
+    };
+    const cancelBox = () => {
+      box = null;
+      hideBox();
     };
 
     // Hover work is coalesced to one pick per frame, skipped while dragging,
@@ -1095,6 +1311,7 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
         p: () => setShowPlanes((value) => (value === "on" ? "off" : "on")),
         " ": () => clearSelection(),
         Escape: () => {
+          cancelBox();
           clearSelection();
           setMenu(null);
         },
@@ -1150,6 +1367,9 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
 
     const element = renderer.domElement;
     element.addEventListener("pointerdown", pointerDownHandler);
+    element.addEventListener("pointermove", boxMove);
+    element.addEventListener("pointerup", boxEnd);
+    element.addEventListener("pointercancel", cancelBox);
     element.addEventListener("click", click);
     element.addEventListener("pointermove", hover);
     element.addEventListener("pointerleave", leave);
@@ -1163,6 +1383,9 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
       if (hoverFrame !== null) cancelAnimationFrame(hoverFrame);
       resizeObserver.disconnect();
       element.removeEventListener("pointerdown", pointerDownHandler);
+      element.removeEventListener("pointermove", boxMove);
+      element.removeEventListener("pointerup", boxEnd);
+      element.removeEventListener("pointercancel", cancelBox);
       element.removeEventListener("click", click);
       element.removeEventListener("pointermove", hover);
       element.removeEventListener("pointerleave", leave);
@@ -1261,7 +1484,6 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
   useEffect(() => {
     if (sceneRef.current) sceneRef.current.controls.rotationMode = rotationMode;
   }, [rotationMode]);
-  useEffect(() => sceneRef.current?.controls.setMousePreset(mousePreset), [mousePreset]);
   useEffect(() => {
     if (sceneRef.current) sceneRef.current.referencePlanes.visible = showPlanes === "on";
   }, [showPlanes]);
@@ -1282,6 +1504,7 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
       <div className="pivot-marker" ref={pivotMarker} aria-hidden="true" />
       <div className="dimension-label" ref={dimensionLabel} aria-hidden="true" />
       <div className="hover-tooltip" ref={tooltip} role="status" />
+      <div className="selection-box" ref={selectionBox} aria-hidden="true" />
       {children}
       <div className="gizmo" onPointerDown={(event) => event.stopPropagation()}>
         <div className="gizmo-cube" ref={cubeMount} />
@@ -1439,8 +1662,8 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
             <section>
               <h3>Navigation</h3>
               <p className="menu-hint">
-                Rotate about the point under the cursor, pan, and zoom to the cursor. Buttons
-                depend on the mouse preset.
+                Middle drag pans, Shift + middle drag orbits about the point under the cursor, and
+                the wheel zooms to the cursor. Left drag selects with a box.
               </p>
               <label>
                 Rotation
@@ -1449,21 +1672,16 @@ function Viewport({ mesh, measurement, onPick, apiRef, children }) {
                   <option value="trackball">Trackball (free)</option>
                 </select>
               </label>
-              <label>
-                Mouse
-                <select value={mousePreset} onChange={(event) => setMousePreset(event.target.value)}>
-                  {Object.entries(MOUSE_PRESETS).map(([value, preset]) => (
-                    <option key={value} value={value}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
             </section>
             <section>
               <h3>Shortcuts</h3>
               <dl className="shortcut-list">
                 {[
+                  ["Middle drag", "Pan"],
+                  ["Shift + middle", "Orbit"],
+                  ["Left drag →", "Window select (fully inside)"],
+                  ["Left drag ←", "Crossing select (touching)"],
+                  ["Ctrl + drag", "Deselect in box"],
                   ["1–7", "Standard views"],
                   ["F", "Fit model"],
                   ["Z", "Zoom to selection"],
