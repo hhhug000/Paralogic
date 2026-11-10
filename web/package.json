@@ -8,11 +8,13 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@chronosai/three-view-cube": "^0.1.4",
-    "@vitejs/plugin-react": "^4.3.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "three": "^0.171.0",
+    "three-mesh-bvh": "^0.9.18"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
     "vite": "^6.0.5"
   }
 }
